@@ -1,0 +1,11 @@
+# Vertical Platform — Database Backup Schedule
+#
+# Installed with: ./scripts/install_cron.sh
+# (merges these lines into the current user's crontab instead of overwriting it)
+#
+# One daily job: full pg_dump of every database -> one archive -> object storage,
+# then deletes backups older than RETENTION_DAYS (see backup.sh).
+# Detailed logs: logs/backup_<date>.log. cron.log only catches unexpected output.
+
+# Daily backup — every day at 02:00 (server time)
+0 2 * * * /bin/bash __BACKUP_DIR__/scripts/backup.sh >> __BACKUP_DIR__/logs/cron.log 2>&1
