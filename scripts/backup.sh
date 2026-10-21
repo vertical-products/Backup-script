@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily full PostgreSQL backup -> S3-compatible storage (DigitalOcean Spaces / AWS S3)
+# Daily full PostgreSQL backup -> S3-compatible storage (Cloudflare R2 / AWS S3 / DO Spaces)
 #
 # One run:
 #   1. Pre-flight: tools, container health, bucket access, free disk space.

@@ -1,7 +1,7 @@
 # Vertical Platform — Database Backup
 
 Daily full backup of the production PostgreSQL cluster (`vertical_postgres_prod`)
-to the DigitalOcean Space `tutora-production-backups` (any S3-compatible store works).
+to the Cloudflare R2 bucket `tutora-s3` (any S3-compatible store works).
 The newest **3 days** of backups are kept. Older ones are deleted automatically.
 
 ## 1. What gets backed up
@@ -34,7 +34,7 @@ pre-flight checks ─► pg_dump -Fc every DB ─► verify dumps ─► tar ─
 * **Format:** `pg_dump` custom format (`.dump`), which is PostgreSQL's compressed
   full backup (schema + data). It is the Postgres equivalent of SQL Server's
   `.bacpac`. `.bacpac` itself only exists for SQL Server / Azure SQL.
-* **One object per backup:** `s3://tutora-production-backups/vertical-platform/postgres/vertical_YYYY-MM-DD_HHMMSS.tar`.
+* **One object per backup:** `s3://tutora-s3/vertical-platform/postgres/vertical_YYYY-MM-DD_HHMMSS.tar`.
   An upload is atomic, so a half-uploaded backup is never seen as a real one.
 * **Retention (`RETENTION_DAYS=3`):** after day 4's backup uploads and is verified,
   day 1's backup is deleted, leaving days 2, 3 and 4.
@@ -69,11 +69,14 @@ sudo mkdir -p /opt/vertical && sudo cp -r Backupscripting /opt/vertical/
 cd /opt/vertical/Backupscripting
 cp config/backup.env.example config/backup.env
 chmod 600 config/backup.env
-nano config/backup.env          # real Spaces key/secret, alert + heartbeat URLs
+nano config/backup.env          # real R2 key/secret, alert + heartbeat URLs
 ```
 
-Create a Spaces access key limited to the `tutora-production-backups` bucket
-(DigitalOcean → Spaces Object Storage → Access Keys).
+Create an R2 API token with **Object Read & Write** limited to the `tutora-s3` bucket
+(Cloudflare dashboard → R2 Object Storage → Manage API tokens). Put its
+**Access Key ID** and **Secret Access Key** in `backup.env`. The `cfat_…` token
+value is for the Cloudflare REST API and is not used here. R2 needs
+`AWS_DEFAULT_REGION=auto` and `S3_ENDPOINT_URL=https://<ACCOUNT_ID>.r2.cloudflarestorage.com`.
 
 Test it by hand. Run it as the same user that will own the cron job: root, or a
 user in the `docker` group.
@@ -82,7 +85,8 @@ user in the `docker` group.
 bash scripts/backup.sh --dry-run   # checks everything, shows what would be deleted, changes nothing
 bash scripts/backup.sh             # real run
 tail -n 50 logs/backup_$(date +%F).log
-aws --endpoint-url https://sgp1.digitaloceanspaces.com s3 ls s3://tutora-production-backups/vertical-platform/postgres/
+aws --endpoint-url https://2981b4797332bb1d614c15a54f491afa.r2.cloudflarestorage.com --region auto \
+  s3 ls s3://tutora-s3/vertical-platform/postgres/
 ```
 
 Install the daily 02:00 cron job. It merges into the existing crontab and is safe to re-run:
@@ -105,8 +109,8 @@ bash scripts/install_cron.sh
 Restore into a **separate** container first, check the data, then cut over.
 
 ```bash
-aws --endpoint-url https://sgp1.digitaloceanspaces.com s3 cp \
-  s3://tutora-production-backups/vertical-platform/postgres/vertical_2026-10-12_020000.tar .
+aws --endpoint-url https://2981b4797332bb1d614c15a54f491afa.r2.cloudflarestorage.com --region auto \
+  s3 cp s3://tutora-s3/vertical-platform/postgres/vertical_2026-10-12_020000.tar .
 tar -xf vertical_2026-10-12_020000.tar && cd vertical_2026-10-12_020000
 sha256sum -c SHA256SUMS                                   # must all be OK
 
@@ -123,12 +127,12 @@ Do a test restore at least once a month. A backup you have never restored is not
 
 ## 6. Notes
 
-* `infra/spaces.tf` also has a 30-day lifecycle rule on the Space. It is a
-  safety net and never removes anything the script keeps. If backups stop for
-  more than 30 days, though, it will delete the last good copies. The heartbeat
-  monitor is what makes sure you notice long before that.
-* The Space lives in the same region as the droplet (sgp1). For off-region
-  disaster recovery, add a second copy elsewhere later.
+* Retention is done by the script only. Do **not** add a short R2 lifecycle
+  (auto-delete) rule on the bucket: if backups stopped, it would delete the
+  last good copies. The heartbeat monitor is what tells you backups stopped.
+* R2 is on a different provider than the DigitalOcean droplet, so the backups
+  survive the loss of the droplet or the DO account. R2 has no egress fees,
+  so downloading a backup to restore it costs nothing.
 
 ## 7. Files
 

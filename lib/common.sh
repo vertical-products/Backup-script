@@ -41,8 +41,10 @@ UPLOAD_RETRIES="${UPLOAD_RETRIES:-3}"
 [[ "$BACKUP_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "FATAL: BACKUP_NAME may only contain letters, digits, . _ -" >&2; exit 1; }
 
 export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
-# AWS CLI >= 2.23 sends extra integrity checksums by default, which S3-compatible
-# stores such as DigitalOcean Spaces reject. Only send them when S3 requires it.
+# A blank `output =` in ~/.aws/config makes every aws call fail with "Unknown output type".
+export AWS_DEFAULT_OUTPUT="${AWS_DEFAULT_OUTPUT:-json}"
+# AWS CLI >= 2.23 sends extra integrity checksums by default, which some S3-compatible
+# stores (Cloudflare R2, DigitalOcean Spaces) reject. Only send them when S3 requires it.
 export AWS_REQUEST_CHECKSUM_CALCULATION="${AWS_REQUEST_CHECKSUM_CALCULATION:-when_required}"
 export AWS_RESPONSE_CHECKSUM_VALIDATION="${AWS_RESPONSE_CHECKSUM_VALIDATION:-when_required}"
 
